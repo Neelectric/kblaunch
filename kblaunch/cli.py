@@ -27,6 +27,7 @@ from kblaunch.plots import (
     print_queue_stats,
     print_user_stats,
     print_pvc_stats,
+    print_node_stats,
 )
 
 MAX_CPU = 192
@@ -1503,6 +1504,34 @@ def monitor_pvcs(
         print_pvc_stats(namespace=namespace)
     except Exception as e:
         print(f"Error displaying PVC stats: {e}")
+        
+@monitor_app.command("nodes")
+def monitor_nodes(
+    namespace: str = typer.Option(
+        None, help="Kubernetes namespace (defaults to KUBE_NAMESPACE)"
+    ),
+):
+    """
+    `kblaunch monitor nodes`
+    Display node GPU utilisation for the namespace.
+
+    Shows one row per node with aggregated GPU stats, and subrows for every running job.
+
+    Args:
+    - namespace: Kubernetes namespace to monitor (default: KUBE_NAMESPACE)
+
+    Examples:
+        ```bash
+        kblaunch monitor nodes
+        kblaunch monitor nodes --namespace custom-namespace
+        ```
+    """
+    try:
+        config = load_config()
+        namespace = namespace or get_current_namespace(config)
+        print_node_stats(namespace=namespace)
+    except Exception as e:
+        print(f"Error displaying node stats: {e}")
 
 
 def version_callback(value: bool):

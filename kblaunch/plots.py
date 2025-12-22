@@ -915,3 +915,84 @@ def print_pvc_stats(namespace: str):
 
     pvc_table.columns[3].footer = f"{total_size:.2f}"
     console.print(pvc_table)
+
+
+def print_node_stats(namespace: str):
+    """Display node usage per namespace."""
+    latest = get_data(namespace=namespace, load_gpu_metrics=False, include_pending=True)
+    console = Console()
+
+    # Separate running and pending GPUs
+    running_gpus = latest[latest["status"] == "Running"]["gpu_name"].value_counts()
+    pending_gpus = latest[latest["status"] == "Pending"]["gpu_name"].value_counts()
+
+    # Create table with both running and pending GPUs
+    gpu_table = Table(title="GPU Count by Type", show_footer=True)
+    gpu_table.add_column("GPU Type", style="cyan", footer="TOTAL")
+    gpu_table.add_column("Running", style="green", justify="right")
+    gpu_table.add_column("Pending", style="red", justify="right")
+    gpu_table.add_column("Total", style="yellow", justify="right")
+
+    # Combine all GPU types
+    all_gpu_types = set(running_gpus.index) | set(pending_gpus.index)
+
+    total_running = 0
+    total_pending = 0
+
+    for gpu_type in sorted(all_gpu_types):
+        running = running_gpus.get(gpu_type, 0)
+        pending = pending_gpus.get(gpu_type, 0)
+        total = running + pending
+
+        gpu_table.add_row(gpu_type, str(running), str(pending), str(total))
+
+        total_running += running
+        total_pending += pending
+
+    # Add footer with totals
+    gpu_table.columns[1].footer = str(total_running)
+    gpu_table.columns[2].footer = str(total_pending)
+    gpu_table.columns[3].footer = str(total_running + total_pending)
+
+    console.print(gpu_table)
+
+    # Print pending pod details if any exist
+    pending_pods = latest[latest["status"] == "Pending"]
+    # sort by creation time
+    pending_pods = pending_pods.sort_values("created")
+
+    if not pending_pods.empty:
+        pending_table = Table(show_header=True, title="Pending Pods")
+        pending_table.add_column("Pod Name", style="cyan")
+        pending_table.add_column("User", style="blue")
+        pending_table.add_column("GPUs", style="red")
+        pending_table.add_column("Time", style="yellow")
+        pending_table.add_column("Reason", style="yellow", max_width=60)
+
+        # Calculate times for pending pods
+        now = datetime.now(timezone.utc).astimezone()
+
+        for _, row in pending_pods.drop_duplicates("pod_name").iterrows():
+            # Calculate wait time from creation timestamp
+            if row.get("created"):
+                wait_time = now - row["created"]
+                days = int(wait_time.total_seconds() // 86400)
+                if days > 0:
+                    hours = int((wait_time.total_seconds() % 86400) // 3600)
+                    time_str = f"{days}d {hours}h" if hours > 0 else f"{days}d"
+                else:
+                    hours = int(wait_time.total_seconds() // 3600)
+                    mins = int((wait_time.total_seconds() % 3600) // 60)
+                    time_str = f"{hours}h {mins}m" if hours > 0 else f"{mins}m"
+            else:
+                time_str = "Unknown"
+
+            pending_table.add_row(
+                row["pod_name"],
+                row["username"],
+                str(sum(pending_pods["pod_name"] == row["pod_name"])),
+                time_str,
+                row["pending_reason"],
+            )
+
+        console.print(pending_table)
