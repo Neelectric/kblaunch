@@ -927,15 +927,15 @@ def print_node_stats(namespace: str):
     v1 = client.CoreV1Api()
     # following https://stackoverflow.com/questions/57230025/how-to-get-allocated-gpus-for-node-in-kuberneteswith-kubernetes-client-java-api
 
-    nodes = v1.list_node().to_dict().get("items")
-    allocatable_nvidia_gpus = 0
-    for node in nodes:
-        if not "status" in node:
-            continue
-        if not "allocatable" in node["status"]:
-            continue
-        if "nvidia.com/gpu" in node["status"]["allocatable"]:
-            allocatable_nvidia_gpus += int(node["status"]["allocatable"]["nvidia.com/gpu"])
+    # nodes = v1.list_node().to_dict().get("items")
+    # allocatable_nvidia_gpus = 0
+    # for node in nodes:
+    #     if not "status" in node:
+    #         continue
+    #     if not "allocatable" in node["status"]:
+    #         continue
+    #     if "nvidia.com/gpu" in node["status"]["allocatable"]:
+    #         allocatable_nvidia_gpus += int(node["status"]["allocatable"]["nvidia.com/gpu"])
 
     allocated_gpus = 0
     pods = v1.list_namespaced_pod(namespace=namespace).to_dict().get("items")
@@ -952,4 +952,4 @@ def print_node_stats(namespace: str):
             if container["resources"]["limits"] != None:
                 if "nvidia.com/gpu" in container["resources"]["limits"]:
                     allocated_gpus += int(container["resources"]["limits"]["nvidia.com/gpu"])
-    print(f"We have {allocatable_nvidia_gpus} allocatable_nvidia_gpus and {allocated_gpus} allocated_gpus")
+    print(f"We have {allocated_gpus} allocated_gpus")
