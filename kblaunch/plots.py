@@ -931,7 +931,11 @@ def print_node_stats(namespace: str):
     # print(df)
     temp_df2 = latest[['node_name', 'gpu_id']]
     temp_df2_grouped = temp_df2.groupby(['node_name'])
-    print(temp_df2_grouped)
+    temp_df2_grouped.describe()
+    print('now loop')
+    for key, item in temp_df2_grouped:
+        print(temp_df2_grouped.get_group(key), "\n\n")
+
     
     
     
