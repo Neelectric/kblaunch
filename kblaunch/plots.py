@@ -924,18 +924,27 @@ def print_node_stats(namespace: str):
     config.load_kube_config()
     v1 = client.CoreV1Api()
     
-    print(latest.columns)
-    print(latest)
-    print('\n\n\n')
+    # print(latest.columns)
+    # print(latest)
+    # print('\n\n\n')
     
-    temp_df2 = latest[['node_name', 'gpu_id', 'pod_name']]
-    temp_df2.groupby(['node_name']).apply(print)
-    # temp_df2_grouped.describe()
-    # print('now loop')
-    # for key, item in temp_df2_grouped:
-    #     print(temp_df2_grouped.get_group(key), "\n\n")
+    # temp_df2 = latest[['node_name', 'gpu_id', 'pod_name']]
+    # temp_df2.groupby(['node_name']).apply(print)
 
     
+    # Group by node and aggregate
+    node_stats = latest.groupby("node_name").agg({
+        "gpu_id": "count",           # Number of GPUs
+        "username": "nunique",        # Number of unique users
+        "pod_name": "nunique",        # Number of pods
+        "gpu_name": "first",          # GPU type (assuming same per node)
+    }).rename(columns={
+        "gpu_id": "gpus_in_use",
+        "username": "users",
+        "pod_name": "pods",
+    })
+    
+    print(node_stats)
     
     
     
