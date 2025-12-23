@@ -924,48 +924,76 @@ def print_node_stats(namespace: str):
     config.load_kube_config()
     v1 = client.CoreV1Api()
     
-    # print(latest.columns)
-    # print(latest)
-    # print('\n\n\n')
     
-    # temp_df2 = latest[['node_name', 'gpu_id', 'pod_name']]
-    # temp_df2.groupby(['node_name']).apply(print)
-
+    # # Group by node and aggregate
+    # node_stats = latest.groupby("node_name").agg({
+    #     "gpu_id": "count",           # Number of GPUs
+    #     "username": "nunique",        # Number of unique users
+    #     "pod_name": "nunique",        # Number of pods
+    #     "gpu_name": "first",          # GPU type (assuming same per node)
+    # }).rename(columns={
+    #     "gpu_id": "gpus_in_use",
+    #     "username": "users",
+    #     "pod_name": "pods",
+    # })
     
-    # Group by node and aggregate
-    node_stats = latest.groupby("node_name").agg({
-        "gpu_id": "count",           # Number of GPUs
-        "username": "nunique",        # Number of unique users
-        "pod_name": "nunique",        # Number of pods
-        "gpu_name": "first",          # GPU type (assuming same per node)
-    }).rename(columns={
-        "gpu_id": "gpus_in_use",
-        "username": "users",
-        "pod_name": "pods",
-    })
+    # print(node_stats)
+    import re
     
-    print(node_stats)
+    latest = get_data(namespace=namespace, load_gpu_metrics=False, include_pending=False)
+    console = Console()
     
     
+    # Build a mapping of (node_name, gpu_id) -> pod_name
+    gpu_usage = {}
+    node_gpu_types = {}
     
+    for _, row in latest.iterrows():
+        node = row["node_name"]
+        gpu_id = row["gpu_id"]
+        pod_name = row["pod_name"]
+        gpu_type = row["gpu_name"]
+        
+        gpu_usage[(node, gpu_id)] = pod_name
+        node_gpu_types[node] = gpu_type
     
+    # Get all unique nodes
+    nodes = sorted(latest["node_name"].unique())
     
+    # Create table
+    table = Table(title="Node GPU Utilization", show_lines=False)
+    table.add_column("Node", style="cyan")
+    table.add_column("GPU #", justify="right")
+    table.add_column("Type", style="yellow")
+    table.add_column("Status")
     
+    for node in nodes:
+        # Parse GPU count from node name (e.g., "gpu8-vm32" → 8)
+        match = re.match(r"gpu(\d+)-", node)
+        if match:
+            total_gpus = int(match.group(1))
+        else:
+            # Fallback: use max gpu_id we've seen + 1
+            node_gpus = [gid for (n, gid) in gpu_usage.keys() if n == node]
+            total_gpus = max(node_gpus) + 1 if node_gpus else 1
+        
+        gpu_type = node_gpu_types.get(node, "Unknown")
+        
+        for gpu_id in range(total_gpus):
+            pod_name = gpu_usage.get((node, gpu_id))
+            if pod_name:
+                status = f"[red]{pod_name}[/red]"
+            else:
+                status = "[green]free[/green]"
+            
+            # Only show node name on first row of each node group
+            display_node = node if gpu_id == 0 else ""
+            display_type = gpu_type if gpu_id == 0 else ""
+            
+            table.add_row(display_node, str(gpu_id), display_type, status)
+        
+        # Add a separator row between nodes (except after the last one)
+        if node != nodes[-1]:
+            table.add_row("", "", "", "")
     
-
-    # allocated_gpus = 0
-    # pods = v1.list_namespaced_pod(namespace=namespace).to_dict().get("items")
-    # for pod in pods:
-    #     if not "spec" in pod:
-    #         continue 
-    #     if not "containers" in pod["spec"]:
-    #         continue
-    #     for container in pod["spec"]["containers"]:
-    #         if not "resources" in container:
-    #             continue
-    #         if not "limits" in container["resources"]:
-    #             continue
-    #         if container["resources"]["limits"] != None:
-    #             if "nvidia.com/gpu" in container["resources"]["limits"]:
-    #                 allocated_gpus += int(container["resources"]["limits"]["nvidia.com/gpu"])
-    # print(f"We have {allocated_gpus} allocated_gpus")
+    console.print(table)
