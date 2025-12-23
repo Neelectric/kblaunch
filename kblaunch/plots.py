@@ -928,8 +928,12 @@ def print_node_stats(namespace: str):
     
     print(latest.columns)
     print(latest)
-    grouped_by_node_name = latest.groupby(['node_name'])
-    print(grouped_by_node_name)
+    df = latest.groupby(['node_name'])
+    temp_df = df.drop(['namespace', ])
+    print(temp_df)
+    temp_df2 = df.drop(df.columns.difference(['node_name', 'gpu_id']))
+    print(temp_df2)
+    
     
     
     
