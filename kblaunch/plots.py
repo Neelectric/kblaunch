@@ -925,31 +925,32 @@ def print_node_stats(namespace: str):
     print(latest)
     config.load_kube_config()
     v1 = client.CoreV1Api()
-    # following https://stackoverflow.com/questions/57230025/how-to-get-allocated-gpus-for-node-in-kuberneteswith-kubernetes-client-java-api
+    
+    print(latest.columns)
+    print(latest)
+    grouped_by_node_name = latest.groupby(['node_name'])
+    print(grouped_by_node_name)
+    
+    
+    
+    
+    
+    
+    
 
-    # nodes = v1.list_node().to_dict().get("items")
-    # allocatable_nvidia_gpus = 0
-    # for node in nodes:
-    #     if not "status" in node:
+    # allocated_gpus = 0
+    # pods = v1.list_namespaced_pod(namespace=namespace).to_dict().get("items")
+    # for pod in pods:
+    #     if not "spec" in pod:
+    #         continue 
+    #     if not "containers" in pod["spec"]:
     #         continue
-    #     if not "allocatable" in node["status"]:
-    #         continue
-    #     if "nvidia.com/gpu" in node["status"]["allocatable"]:
-    #         allocatable_nvidia_gpus += int(node["status"]["allocatable"]["nvidia.com/gpu"])
-
-    allocated_gpus = 0
-    pods = v1.list_namespaced_pod(namespace=namespace).to_dict().get("items")
-    for pod in pods:
-        if not "spec" in pod:
-            continue 
-        if not "containers" in pod["spec"]:
-            continue
-        for container in pod["spec"]["containers"]:
-            if not "resources" in container:
-                continue
-            if not "limits" in container["resources"]:
-                continue
-            if container["resources"]["limits"] != None:
-                if "nvidia.com/gpu" in container["resources"]["limits"]:
-                    allocated_gpus += int(container["resources"]["limits"]["nvidia.com/gpu"])
-    print(f"We have {allocated_gpus} allocated_gpus")
+    #     for container in pod["spec"]["containers"]:
+    #         if not "resources" in container:
+    #             continue
+    #         if not "limits" in container["resources"]:
+    #             continue
+    #         if container["resources"]["limits"] != None:
+    #             if "nvidia.com/gpu" in container["resources"]["limits"]:
+    #                 allocated_gpus += int(container["resources"]["limits"]["nvidia.com/gpu"])
+    # print(f"We have {allocated_gpus} allocated_gpus")
