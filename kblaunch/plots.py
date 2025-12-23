@@ -927,23 +927,38 @@ def print_node_stats(namespace: str):
         console.print("[yellow]No GPU pods found[/yellow]")
         return
     
-    # Build a mapping of (node_name, gpu_id) -> (pod_name, status)
-    gpu_usage = {}
+    # Build a mapping of node -> {pod_name: gpu_count}
+    node_pods = {}
     node_gpu_types = {}
     
     for _, row in latest.iterrows():
         node = row["node_name"]
-        gpu_id = row["gpu_id"]
         pod_name = row["pod_name"]
         gpu_type = row["gpu_name"]
         status = row["status"]
         
-        # Skip pending pods for GPU assignment (they don't have a real node yet)
+        # Skip pending pods (they have node_name="Pending")
         if status == "Pending":
             continue
-            
-        gpu_usage[(node, gpu_id)] = (pod_name, status)
+        
         node_gpu_types[node] = gpu_type
+        
+        if node not in node_pods:
+            node_pods[node] = {}
+        
+        # Count GPUs per pod (each row is one GPU)
+        if pod_name not in node_pods[node]:
+            node_pods[node][pod_name] = 0
+        node_pods[node][pod_name] += 1
+    
+    # Build gpu_usage by assigning GPUs sequentially to each pod
+    gpu_usage = {}
+    for node, pods in node_pods.items():
+        gpu_idx = 0
+        for pod_name, gpu_count in pods.items():
+            for _ in range(gpu_count):
+                gpu_usage[(node, gpu_idx)] = pod_name
+                gpu_idx += 1
     
     # Get all unique nodes (excluding "Pending" placeholder)
     nodes = sorted([n for n in latest["node_name"].unique() if n != "Pending"])
@@ -952,7 +967,7 @@ def print_node_stats(namespace: str):
         console.print("[yellow]No running GPU pods found[/yellow]")
         return
     
-    # Create table (no show_lines - we'll use end_section instead)
+    # Create table
     table = Table(title="Node GPU Utilization")
     table.add_column("Node", style="cyan")
     table.add_column("GPU #", justify="right")
@@ -968,17 +983,15 @@ def print_node_stats(namespace: str):
         if match:
             num_gpus = int(match.group(1))
         else:
-            # Fallback: use max gpu_id we've seen + 1
-            node_gpus = [gid for (n, gid) in gpu_usage.keys() if n == node]
-            num_gpus = max(node_gpus) + 1 if node_gpus else 1
+            # Fallback: use total GPUs assigned to this node
+            num_gpus = sum(node_pods.get(node, {}).values()) or 1
         
         gpu_type = node_gpu_types.get(node, "Unknown")
         total_gpus += num_gpus
         
         for gpu_id in range(num_gpus):
-            usage = gpu_usage.get((node, gpu_id))
-            if usage:
-                pod_name, pod_status = usage
+            pod_name = gpu_usage.get((node, gpu_id))
+            if pod_name:
                 status = f"[red]{pod_name}[/red]"
                 total_used += 1
             else:
