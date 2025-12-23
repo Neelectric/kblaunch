@@ -931,7 +931,8 @@ def print_node_stats(namespace: str):
     df = latest.groupby(['node_name'])
     temp_df = df.drop(['namespace', ])
     print(temp_df)
-    temp_df2 = df.drop(df.columns.difference(['node_name', 'gpu_id']))
+    temp_df2 = latest.drop(latest.columns.difference(['node_name', 'gpu_id']))
+    temp_df2_grouped = temp_df2.groupby(['node_name'])
     print(temp_df2)
     
     
