@@ -919,7 +919,7 @@ def print_pvc_stats(namespace: str):
 
 def print_node_stats(namespace: str):
     """Display node usage per namespace."""
-    latest = get_data(namespace=namespace, load_gpu_metrics=False, include_pending=True)
+    latest = get_data(namespace=namespace, load_gpu_metrics=True, include_pending=True)
     console = Console()
     config.load_kube_config()
     v1 = client.CoreV1Api()
@@ -929,7 +929,7 @@ def print_node_stats(namespace: str):
     # df = latest.groupby(['node_name'])
     # # temp_df = df.drop(['namespace', ])
     # print(df)
-    temp_df2 = latest.drop(latest.columns.difference(['node_name', 'gpu_id']))
+    temp_df2 = latest[['node_name', 'gpu_id']]
     temp_df2_grouped = temp_df2.groupby(['node_name'])
     print(temp_df2_grouped)
     
