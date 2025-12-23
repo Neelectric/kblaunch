@@ -1550,5 +1550,6 @@ def main(
     ] = None,
 ):
     """Entry point for the application"""
+    print("monitoring nodes")
     monitor_nodes()
     pass  # The callback doesn't need to do anything else
