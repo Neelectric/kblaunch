@@ -46,6 +46,7 @@ __all__ = [
     "monitor_users",
     "monitor_jobs",
     "monitor_queue",
+    "monitor_nodes"
 ]
 
-from .cli import setup, launch, monitor_gpus, monitor_users, monitor_jobs, monitor_queue
+from .cli import setup, launch, monitor_gpus, monitor_users, monitor_jobs, monitor_queue, monitor_nodes
