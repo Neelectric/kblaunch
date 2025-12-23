@@ -921,6 +921,7 @@ def print_node_stats(namespace: str):
     """Display node usage per namespace."""
     latest = get_data(namespace=namespace, load_gpu_metrics=False, include_pending=True)
     console = Console()
+    print(latest)
 
     # Separate running and pending GPUs
     running_gpus = latest[latest["status"] == "Running"]["gpu_name"].value_counts()
