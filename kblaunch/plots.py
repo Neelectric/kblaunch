@@ -916,7 +916,6 @@ def print_pvc_stats(namespace: str):
     pvc_table.columns[3].footer = f"{total_size:.2f}"
     console.print(pvc_table)
 
-
 def print_node_stats(namespace: str):
     """Display node GPU utilization per node."""
     import re
@@ -953,8 +952,8 @@ def print_node_stats(namespace: str):
         console.print("[yellow]No running GPU pods found[/yellow]")
         return
     
-    # Create table with lines between rows
-    table = Table(title="Node GPU Utilization", show_lines=True)
+    # Create table (no show_lines - we'll use end_section instead)
+    table = Table(title="Node GPU Utilization")
     table.add_column("Node", style="cyan")
     table.add_column("GPU #", justify="right")
     table.add_column("Type", style="yellow")
@@ -963,7 +962,7 @@ def print_node_stats(namespace: str):
     total_gpus = 0
     total_used = 0
     
-    for node in nodes:
+    for node_idx, node in enumerate(nodes):
         # Parse GPU count from node name (e.g., "gpu8-vm32" → 8)
         match = re.match(r"gpu(\d+)-", node)
         if match:
@@ -989,7 +988,17 @@ def print_node_stats(namespace: str):
             display_node = node if gpu_id == 0 else ""
             display_type = gpu_type if gpu_id == 0 else ""
             
-            table.add_row(display_node, str(gpu_id), display_type, status)
+            # Add section divider after last GPU of each node (except the last node)
+            is_last_gpu = gpu_id == num_gpus - 1
+            is_last_node = node_idx == len(nodes) - 1
+            
+            table.add_row(
+                display_node, 
+                str(gpu_id), 
+                display_type, 
+                status,
+                end_section=(is_last_gpu and not is_last_node),
+            )
     
     console.print(table)
     
@@ -1000,7 +1009,7 @@ def print_node_stats(namespace: str):
     pending = latest[latest["status"] == "Pending"]
     if not pending.empty:
         console.print()
-        pending_table = Table(title="Pending GPU Requests", show_lines=True)
+        pending_table = Table(title="Pending GPU Requests")
         pending_table.add_column("Pod Name", style="cyan")
         pending_table.add_column("User", style="blue")
         pending_table.add_column("GPUs", justify="right", style="red")
