@@ -918,33 +918,17 @@ def print_pvc_stats(namespace: str):
 
 
 def print_node_stats(namespace: str):
-    """Display node usage per namespace."""
-    latest = get_data(namespace=namespace, load_gpu_metrics=True, include_pending=True)
-    console = Console()
-    config.load_kube_config()
-    v1 = client.CoreV1Api()
-    
-    
-    # # Group by node and aggregate
-    # node_stats = latest.groupby("node_name").agg({
-    #     "gpu_id": "count",           # Number of GPUs
-    #     "username": "nunique",        # Number of unique users
-    #     "pod_name": "nunique",        # Number of pods
-    #     "gpu_name": "first",          # GPU type (assuming same per node)
-    # }).rename(columns={
-    #     "gpu_id": "gpus_in_use",
-    #     "username": "users",
-    #     "pod_name": "pods",
-    # })
-    
-    # print(node_stats)
+    """Display node GPU utilization per node."""
     import re
     
-    latest = get_data(namespace=namespace, load_gpu_metrics=False, include_pending=False)
+    latest = get_data(namespace=namespace, load_gpu_metrics=False, include_pending=True)
     console = Console()
     
+    if latest.empty:
+        console.print("[yellow]No GPU pods found[/yellow]")
+        return
     
-    # Build a mapping of (node_name, gpu_id) -> pod_name
+    # Build a mapping of (node_name, gpu_id) -> (pod_name, status)
     gpu_usage = {}
     node_gpu_types = {}
     
@@ -953,47 +937,84 @@ def print_node_stats(namespace: str):
         gpu_id = row["gpu_id"]
         pod_name = row["pod_name"]
         gpu_type = row["gpu_name"]
+        status = row["status"]
         
-        gpu_usage[(node, gpu_id)] = pod_name
+        # Skip pending pods for GPU assignment (they don't have a real node yet)
+        if status == "Pending":
+            continue
+            
+        gpu_usage[(node, gpu_id)] = (pod_name, status)
         node_gpu_types[node] = gpu_type
     
-    # Get all unique nodes
-    nodes = sorted(latest["node_name"].unique())
+    # Get all unique nodes (excluding "Pending" placeholder)
+    nodes = sorted([n for n in latest["node_name"].unique() if n != "Pending"])
     
-    # Create table
-    table = Table(title="Node GPU Utilization", show_lines=False)
+    if not nodes:
+        console.print("[yellow]No running GPU pods found[/yellow]")
+        return
+    
+    # Create table with lines between rows
+    table = Table(title="Node GPU Utilization", show_lines=True)
     table.add_column("Node", style="cyan")
     table.add_column("GPU #", justify="right")
     table.add_column("Type", style="yellow")
     table.add_column("Status")
     
+    total_gpus = 0
+    total_used = 0
+    
     for node in nodes:
         # Parse GPU count from node name (e.g., "gpu8-vm32" → 8)
         match = re.match(r"gpu(\d+)-", node)
         if match:
-            total_gpus = int(match.group(1))
+            num_gpus = int(match.group(1))
         else:
             # Fallback: use max gpu_id we've seen + 1
             node_gpus = [gid for (n, gid) in gpu_usage.keys() if n == node]
-            total_gpus = max(node_gpus) + 1 if node_gpus else 1
+            num_gpus = max(node_gpus) + 1 if node_gpus else 1
         
         gpu_type = node_gpu_types.get(node, "Unknown")
+        total_gpus += num_gpus
         
-        for gpu_id in range(total_gpus):
-            pod_name = gpu_usage.get((node, gpu_id))
-            if pod_name:
+        for gpu_id in range(num_gpus):
+            usage = gpu_usage.get((node, gpu_id))
+            if usage:
+                pod_name, pod_status = usage
                 status = f"[red]{pod_name}[/red]"
+                total_used += 1
             else:
                 status = "[green]free[/green]"
             
-            # Only show node name on first row of each node group
+            # Only show node name and type on first row of each node group
             display_node = node if gpu_id == 0 else ""
             display_type = gpu_type if gpu_id == 0 else ""
             
             table.add_row(display_node, str(gpu_id), display_type, status)
-        
-        # Add a separator row between nodes (except after the last one)
-        if node != nodes[-1]:
-            table.add_row("", "", "", "")
     
     console.print(table)
+    
+    # Print summary
+    console.print(f"\n[bold]Summary:[/bold] {total_used}/{total_gpus} GPUs in use across {len(nodes)} nodes")
+    
+    # Show pending pods separately if any
+    pending = latest[latest["status"] == "Pending"]
+    if not pending.empty:
+        console.print()
+        pending_table = Table(title="Pending GPU Requests", show_lines=True)
+        pending_table.add_column("Pod Name", style="cyan")
+        pending_table.add_column("User", style="blue")
+        pending_table.add_column("GPUs", justify="right", style="red")
+        pending_table.add_column("Type", style="yellow")
+        pending_table.add_column("Reason", style="dim", max_width=50)
+        
+        for _, row in pending.drop_duplicates("pod_name").iterrows():
+            gpu_count = len(pending[pending["pod_name"] == row["pod_name"]])
+            pending_table.add_row(
+                row["pod_name"],
+                row["username"],
+                str(gpu_count),
+                row["gpu_name"],
+                row["pending_reason"] or "Unknown",
+            )
+        
+        console.print(pending_table)
