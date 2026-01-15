@@ -994,6 +994,7 @@ def print_node_stats(namespace: str):
     table.add_column("GPU #", justify="right")
     table.add_column("Type", style="yellow")
     table.add_column("Status")
+    table.add_column("Started", style="dim")
     table.add_column("Time Left", justify="right")
 
     total_gpus = 0
@@ -1022,6 +1023,8 @@ def print_node_stats(namespace: str):
                 # Calculate time left until 5-day deadline
                 started = pod_started.get(pod_name)
                 if started:
+                    # Format started time as date and time
+                    started_str = started.strftime("%Y-%m-%d %H:%M")
                     elapsed = now - started
                     remaining = max_runtime - elapsed
                     if remaining.total_seconds() <= 0:
@@ -1035,9 +1038,11 @@ def print_node_stats(namespace: str):
                             mins = (remaining.seconds % 3600) // 60
                             time_left = f"{hours}h {mins}m" if hours > 0 else f"{mins}m"
                 else:
+                    started_str = "?"
                     time_left = "?"
             else:
                 status = "[green]free[/green]"
+                started_str = ""
                 time_left = ""
 
             # Only show node name and type on first row of each node group
@@ -1053,6 +1058,7 @@ def print_node_stats(namespace: str):
                 str(gpu_id),
                 display_type,
                 status,
+                started_str,
                 time_left,
                 end_section=(is_last_gpu and not is_last_node),
             )
