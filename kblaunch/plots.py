@@ -230,11 +230,25 @@ def get_data(
                             .replace(tzinfo=timezone.utc)
                             .astimezone()
                         )
+                    started = None
                 else:
                     pending_reason = None
                     gpu_name = pod.spec.node_selector["nvidia.com/gpu.product"]
                     node_name = pod.spec.node_name
                     created = None
+                    # Get actual container start time from container status
+                    started = None
+                    if pod.status.container_statuses:
+                        for cs in pod.status.container_statuses:
+                            if cs.state and cs.state.running and cs.state.running.started_at:
+                                started = cs.state.running.started_at
+                                if isinstance(started, str):
+                                    started = (
+                                        datetime.strptime(started, "%Y-%m-%dT%H:%M:%SZ")
+                                        .replace(tzinfo=timezone.utc)
+                                        .astimezone()
+                                    )
+                                break
 
                 # Get resource requests and other data
                 container = pod.spec.containers[0]
@@ -279,7 +293,8 @@ def get_data(
                         "status": pod.status.phase,
                         "pending_reason": pending_reason,
                         "interactive": is_interactive,
-                        "created": created,  # Add creation time
+                        "created": created,  # Add creation time (for pending pods)
+                        "started": started,  # Add container start time (for running pods)
                         **gpu_metrics,
                     }
                     records.append(record)
@@ -919,38 +934,44 @@ def print_pvc_stats(namespace: str):
 def print_node_stats(namespace: str):
     """Display node GPU utilization per node."""
     import re
-    
+    from datetime import timedelta
+
     latest = get_data(namespace=namespace, load_gpu_metrics=False, include_pending=True)
     console = Console()
-    
+
     if latest.empty:
         console.print("[yellow]No GPU pods found[/yellow]")
         return
-    
-    # Build a mapping of node -> {pod_name: gpu_count}
+
+    # Build a mapping of node -> {pod_name: gpu_count} and pod -> started time
     node_pods = {}
     node_gpu_types = {}
-    
+    pod_started = {}  # Track when each pod started
+
     for _, row in latest.iterrows():
         node = row["node_name"]
         pod_name = row["pod_name"]
         gpu_type = row["gpu_name"]
         status = row["status"]
-        
+
         # Skip pending pods (they have node_name="Pending")
         if status == "Pending":
             continue
-        
+
         node_gpu_types[node] = gpu_type
-        
+
+        # Track started time for each pod
+        if pod_name not in pod_started and row.get("started"):
+            pod_started[pod_name] = row["started"]
+
         if node not in node_pods:
             node_pods[node] = {}
-        
+
         # Count GPUs per pod (each row is one GPU)
         if pod_name not in node_pods[node]:
             node_pods[node][pod_name] = 0
         node_pods[node][pod_name] += 1
-    
+
     # Build gpu_usage by assigning GPUs sequentially to each pod
     gpu_usage = {}
     for node, pods in node_pods.items():
@@ -959,24 +980,27 @@ def print_node_stats(namespace: str):
             for _ in range(gpu_count):
                 gpu_usage[(node, gpu_idx)] = pod_name
                 gpu_idx += 1
-    
+
     # Get all unique nodes (excluding "Pending" placeholder)
     nodes = sorted([n for n in latest["node_name"].unique() if n != "Pending"])
-    
+
     if not nodes:
         console.print("[yellow]No running GPU pods found[/yellow]")
         return
-    
+
     # Create table
     table = Table(title="Node GPU Utilization")
     table.add_column("Node", style="cyan")
     table.add_column("GPU #", justify="right")
     table.add_column("Type", style="yellow")
     table.add_column("Status")
-    
+    table.add_column("Time Left", justify="right")
+
     total_gpus = 0
     total_used = 0
-    
+    now = datetime.now(timezone.utc).astimezone()
+    max_runtime = timedelta(days=5)
+
     for node_idx, node in enumerate(nodes):
         # Parse GPU count from node name (e.g., "gpu8-vm32" → 8)
         match = re.match(r"gpu(\d+)-", node)
@@ -985,36 +1009,56 @@ def print_node_stats(namespace: str):
         else:
             # Fallback: use total GPUs assigned to this node
             num_gpus = sum(node_pods.get(node, {}).values()) or 1
-        
+
         gpu_type = node_gpu_types.get(node, "Unknown")
         total_gpus += num_gpus
-        
+
         for gpu_id in range(num_gpus):
             pod_name = gpu_usage.get((node, gpu_id))
             if pod_name:
                 status = f"[red]{pod_name}[/red]"
                 total_used += 1
+
+                # Calculate time left until 5-day deadline
+                started = pod_started.get(pod_name)
+                if started:
+                    elapsed = now - started
+                    remaining = max_runtime - elapsed
+                    if remaining.total_seconds() <= 0:
+                        time_left = "[red]expired[/red]"
+                    else:
+                        days = remaining.days
+                        hours = remaining.seconds // 3600
+                        if days > 0:
+                            time_left = f"{days}d {hours}h"
+                        else:
+                            mins = (remaining.seconds % 3600) // 60
+                            time_left = f"{hours}h {mins}m" if hours > 0 else f"{mins}m"
+                else:
+                    time_left = "?"
             else:
                 status = "[green]free[/green]"
-            
+                time_left = ""
+
             # Only show node name and type on first row of each node group
             display_node = node if gpu_id == 0 else ""
             display_type = gpu_type if gpu_id == 0 else ""
-            
+
             # Add section divider after last GPU of each node (except the last node)
             is_last_gpu = gpu_id == num_gpus - 1
             is_last_node = node_idx == len(nodes) - 1
-            
+
             table.add_row(
-                display_node, 
-                str(gpu_id), 
-                display_type, 
+                display_node,
+                str(gpu_id),
+                display_type,
                 status,
+                time_left,
                 end_section=(is_last_gpu and not is_last_node),
             )
-    
+
     console.print(table)
-    
+
     # Print summary
     console.print(f"\n[bold]Summary:[/bold] {total_used}/{total_gpus} GPUs in use across {len(nodes)} nodes")
     
